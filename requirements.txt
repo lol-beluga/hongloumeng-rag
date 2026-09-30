@@ -1,0 +1,5 @@
+jieba==0.42.1
+numpy==2.5.3
+openai==3.19.2
+scikit-learn==1.9.1
+streamlit==1.64.0

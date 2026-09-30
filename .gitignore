@@ -1,0 +1,19 @@
+# 密钥，绝不能上传
+.env
+
+# 本地缓存（pickle 产物，体积大且每台机器自己重建）
+cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 与本项目无关、且含公司内部仓库地址的压缩包目录
+多线程音视频转码系统/
