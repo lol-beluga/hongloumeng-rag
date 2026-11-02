@@ -3,6 +3,8 @@
 
 # 本地缓存（pickle 产物，体积大且每台机器自己重建）
 cache/
+runs/
+outputs/
 
 # Python
 __pycache__/

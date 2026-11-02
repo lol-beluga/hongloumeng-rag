@@ -3,3 +3,4 @@ numpy==2.5.3
 openai==3.19.2
 scikit-learn==1.9.1
 streamlit==1.64.0
+langgraph==1.2.19
