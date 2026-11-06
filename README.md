@@ -54,8 +54,8 @@ flowchart LR
 Python 依赖按 [requirements.txt](requirements.txt) 安装，当前开发环境使用 Python 3.14。任务中心还需要 JDK 21；项目带有 Maven Wrapper，首次启动会下载 Maven 和 Java 依赖。
 
 ```bash
-git clone https://github.com/lol-beluga/hongloumeng-rag.git
-cd hongloumeng-rag
+git clone https://github.com/lol-beluga/honglou-agent.git
+cd honglou-agent
 python -m venv .venv
 ```
 
