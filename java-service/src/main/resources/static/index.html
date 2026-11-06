@@ -28,7 +28,7 @@ async function api(url,options={}){const r=await fetch(url,options);const data=a
 function text(tag,value,parent){const e=document.createElement(tag);e.textContent=value;parent.append(e);return e;}
 async function refresh(){
  if(busy)return;busy=true;
- try{const jobs=await api('/api/jobs');$('history').replaceChildren();for(const j of jobs){const b=text('button',j.question,$('history'));b.className='task';text('small',labels[j.status]+' · '+new Date(j.createdAt).toLocaleString(),b);b.onclick=()=>{selected=j.id;localStorage.setItem('honglou.selected',selected);render(j);};}if(selected){const j=jobs.find(x=>x.id===selected)||await api('/api/jobs/'+selected);render(j);}}
+ try{const jobs=await api('/api/jobs');$('history').replaceChildren();for(const j of jobs){const b=text('button',j.question,$('history'));b.className='task';text('small',labels[j.status]+' · '+new Date(j.createdAt).toLocaleString(),b);b.onclick=async()=>{selected=j.id;localStorage.setItem('honglou.selected',selected);try{const detail=await api('/api/jobs/'+j.id);if(selected===j.id)render(detail);}catch(e){$('notice').textContent=e.message;}};}if(selected){const id=selected;const j=await api('/api/jobs/'+id);if(selected===id)render(j);}}
  catch(e){$('notice').textContent=e.message;}finally{busy=false;}
 }
 function render(j){const el=$('detail');el.replaceChildren();text('h2',j.question,el);text('small',`${labels[j.status]} · 第${j.attempt}次执行 · ${j.id}`,el);

@@ -15,7 +15,11 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/jobs")
 public class JobController {
     private final JobService service;
-    public JobController(JobService service) { this.service = service; }
+    private final JobQueryService queries;
+    public JobController(JobService service, JobQueryService queries) {
+        this.service = service;
+        this.queries = queries;
+    }
     public record CreateRequest(@NotBlank @Size(max=2000) String question,
                                 @NotBlank @Pattern(regexp="lookup|research") String mode) {}
     public record RetryRequest(boolean extendBudget) {}
@@ -33,7 +37,7 @@ public class JobController {
         if (limit < 1 || limit > 100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit须为1至100");
         return service.recent(limit);
     }
-    @GetMapping("/{id}") public Job get(@PathVariable String id) { return service.get(id); }
+    @GetMapping("/{id}") public Job get(@PathVariable String id) { return queries.get(id); }
     @PostMapping("/{id}/retry") public ResponseEntity<Job> retry(@PathVariable String id,
                          @RequestBody(required=false) RetryRequest request) {
         return ResponseEntity.accepted().body(service.retry(id, request != null && request.extendBudget()));

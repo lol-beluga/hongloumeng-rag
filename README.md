@@ -31,7 +31,8 @@ Java 部分负责把查证变成可管理的后台任务。提交后立即返回
 ```mermaid
 flowchart LR
     U[浏览器任务中心] --> J[Spring Boot API]
-    J --> H[(H2 任务记录)]
+    J --> H[(MySQL / H2 任务记录)]
+    J --> C[(Redis 已完成结果缓存)]
     J --> Q[有界任务队列]
     Q --> P[Python 执行进程]
     P --> R[原文检索 / LangGraph Agent]
@@ -45,7 +46,7 @@ flowchart LR
 | 原文检索 | jieba、TF-IDF、余弦相似度 | 语料范围固定，人物名、情节词和原句检索适合作为可检查的基线 |
 | 多步考证 | LangGraph、工具调用 | 搜索、读上下文、整理结论可以按问题多次进行 |
 | 执行控制 | 调用预算、引用校验、SQLite 检查点 | 避免无休止调用，保存已经找到的证据 |
-| 任务服务 | Java 21、Spring Boot、Spring JDBC、H2 | 提供接口、持久化历史、控制并发，启动时无需另装数据库服务 |
+| 任务服务 | Java 21、Spring Boot、Spring JDBC、MySQL / H2、Redis | 持久化历史、控制并发，缓存已完成结果；H2 模式可直接体验 |
 | 页面 | Java 服务内置网页；另有 Streamlit 入口 | 任务中心适合异步查阅，Streamlit 适合普通问答和多轮追问 |
 
 ## 开始使用
@@ -82,6 +83,8 @@ sh mvnw spring-boot:run
 打开 [任务中心](http://127.0.0.1:8080)，先选“查找原文”即可体验。首次建立索引会比后续查询慢一些。
 
 要使用“多步考证”，把项目根目录的 `.env.example` 复制为 `.env`，填写 `DEEPSEEK_API_KEY`。模型默认是 `deepseek-chat`；需要修改时，在启动服务的终端设置环境变量 `DEEPSEEK_MODEL`。模型须支持工具调用。
+
+需要 MySQL + Redis 时，按 [服务配置](java-service/README.md#mysql-与-redis) 启动配套服务并启用 mysql 配置。默认仍可用 H2 直接体验。
 
 任务服务默认同时执行2个任务、最多等待8个任务。配置、接口示例和故障处理见 [Java 服务说明](java-service/README.md)。
 

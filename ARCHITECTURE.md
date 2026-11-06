@@ -4,13 +4,13 @@
 
 ## Java 任务入口
 
-`java-service/` 提供 Spring Boot API 和任务网页。`JobController` 校验请求，`JobService` 管理容量和状态，`JobRepository` 使用 Spring JDBC / H2 保存任务。提交返回任务编号，由网页轮询结果。
+`java-service/` 提供 Spring Boot API 和任务网页。`JobController` 校验请求，`JobService` 管理容量和状态，`JobRepository` 使用 Spring JDBC / MySQL（默认 H2） 保存任务。提交返回任务编号，由网页轮询结果。
 
 任务先提交数据库，再交给固定2个工作线程、8个等待位置的有界线程池。请求编号有数据库唯一约束；并发重复提交返回同一任务，复用编号但修改内容返回冲突。状态更新同时检查执行次数，防止旧执行结果覆盖重试后的新状态。
 
 `PythonWorker` 通过 `ProcessBuilder` 启动 `java_worker.py`，以 JSON 传递参数。`lookup` 模式只检索原文；`research` 模式使用 Java 任务编号作为 Python 检查点编号，已有检查点则恢复。进程默认最长执行240秒。
 
-H2 记录提交、状态和结果，SQLite 保留 Agent 中间过程，两者没有跨库事务。服务重启将未完成任务标为中断，等待显式重试。Java 历史列表只包含通过 Java 接口提交的任务；Python 侧仍可通过 CLI 查看相应的考证记录。
+MySQL / H2 记录提交、状态和结果，SQLite 保留 Agent 中间过程，两者没有跨库事务。服务重启将未完成任务标为中断，等待显式重试。Java 历史列表只包含通过 Java 接口提交的任务；Python 侧仍可通过 CLI 查看相应的考证记录。
 
 这是单实例设计，尚未引入消息队列、跨实例调度或用户权限隔离。接口与启动方法见 [服务说明](java-service/README.md)，并发、事务和恢复边界见 [设计说明](java-service/DESIGN.md)。
 
@@ -78,3 +78,7 @@ Token用量达到40000后停止发起新的模型请求。该限制依据API已�
 `evaluate.py`在相同语料和模型配置下运行普通问答与考证模式，保存逐题预测、原文召回、引用文字校验结果、耗时和已报告Token用量。
 
 答案是否正确、原文是否支持结论，在`review.csv`中人工标注。`eval/cases.jsonl`包含6条开发用例，覆盖事实查询、人物比较、多轮追问和语料外问题。
+
+## Redis 查询缓存
+
+任务详情经 `JobQueryService` 优先查询 Redis，未命中回查数据库。只缓存已完成结果及短时不存在标记，运行状态不缓存；过期抖动、单实例分段锁和二次检查减少并发回源，Redis 异常时退回数据库。历史列表只返回摘要，页面单独请求详情。

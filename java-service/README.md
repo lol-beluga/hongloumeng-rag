@@ -31,7 +31,7 @@ sh mvnw spring-boot:run
 
 最后三个配置位于 `src/main/resources/application.properties`，也可以使用 Spring Boot 的环境变量形式覆盖，例如 `RESEARCH_WORKERS=1`。每个执行中的任务对应一个 Python 进程，需要分别加载索引；增加并发前应测量内存和模型接口额度。
 
-数据库为 H2 文件库，任务包括问题、模式、状态、结果、执行次数和时间戳。Agent 的中间检查点保存在项目根目录的 `runs/research.sqlite3`，备份时需要同时保留两处数据。服务不保存或接收浏览器传来的模型密钥。
+默认数据库为 H2 文件库，任务包括问题、模式、状态、结果、执行次数和时间戳。Agent 的中间检查点保存在项目根目录的 `runs/research.sqlite3`，备份时需要同时保留两处数据。服务不保存或接收浏览器传来的模型密钥。
 
 ## 接口
 
@@ -66,7 +66,7 @@ Invoke-RestMethod -Uri ('http://127.0.0.1:8080/api/jobs/' + $job.id)
 
 | 接口 | 用途 |
 | --- | --- |
-| `GET /api/jobs?limit=20` | 最近任务，`limit` 范围1至100 |
+| `GET /api/jobs?limit=20` | 最近任务摘要（不含结果正文），`limit` 范围1至100 |
 | `GET /api/jobs/{id}` | 查询状态和结果 |
 | `POST /api/jobs/{id}/retry` | 重试失败、暂停或中断的任务 |
 
@@ -92,3 +92,33 @@ Invoke-RestMethod -Uri ('http://127.0.0.1:8080/api/jobs/' + $job.id)
 ```
 
 Java 测试使用内存 H2 和可控的执行器替身，覆盖 HTTP 校验、唯一键冲突、队列容量、重试状态和旧执行结果覆盖保护。真实 Python 原文检索需要另行通过网页或接口验证；这些自动化测试不会调用模型。
+
+## MySQL 与 Redis
+
+需要 Docker Compose 或已部署的 MySQL 8.4 与 Redis 7.4。在本目录使用 PowerShell：
+
+```powershell
+# 首次生成并妥善保留数据库密码；重启应沿用原密码
+$env:MYSQL_PASSWORD = [guid]::NewGuid().ToString('N')
+$env:MYSQL_ROOT_PASSWORD = [guid]::NewGuid().ToString('N')
+docker compose up -d --wait
+$env:SPRING_PROFILES_ACTIVE = 'mysql'
+.\mvnw.cmd spring-boot:run
+```
+
+Python 环境变量按前述启动步骤设置。Linux / macOS 用 export 设置同名环境变量，并使用 `sh mvnw spring-boot:run`。MySQL 数据保存在命名卷；`docker compose stop` 停止依赖而保留数据。启用 mysql 配置不会迁移或删除 H2 旧历史；需要旧数据时切回默认配置。不要把两种模式同时用于推进同一个 Python 检查点。
+
+已有服务可以直接配置 MYSQL_URL（JDBC地址）、MYSQL_USER、MYSQL_PASSWORD、REDIS_HOST、REDIS_PORT、REDIS_PASSWORD，无需运行 Compose。默认数据库名及用户均为 honglou。自定义 Compose 的 MYSQL_PORT 时，也需同步 MYSQL_URL 中的端口。不同数据库和环境应设置不同 CACHE_NAMESPACE。
+
+Redis 默认缓存已完成任务900至1020秒，不存在的编号缓存30秒；暂停和运行状态不缓存。Redis 不可用时回查数据库，5秒后再试缓存。可通过 RESEARCH_CACHE_ENABLED=false 关闭缓存。Compose 中 Redis 只映射回环地址，设置128MB容量及 allkeys-lru 淘汰，缓存不落盘。MySQL 不可用时提交操作会失败，不能由 Redis 替代。
+
+### 真实服务测试
+
+使用独立的空测试数据库，避免启动恢复逻辑影响正在运行的任务。设置 MYSQL_URL、MYSQL_USER、MYSQL_PASSWORD、REDIS_HOST、REDIS_PORT 后：
+
+```powershell
+$env:HONGLOU_INTEGRATION = 'true'
+.\mvnw.cmd test
+```
+
+普通测试不依赖外部服务；显式启用后，5项集成测试验证真实 MySQL 唯一约束、中文与 JSON、Redis 过期、空值缓存及断连回退。测试会留下少量测试记录，Redis 键使用随机测试前缀。GitHub Actions 使用独立 MySQL / Redis 容器自动运行这组检查。

@@ -26,7 +26,7 @@ public class JobRepository {
         return db.query("SELECT * FROM research_jobs WHERE request_key=?", mapper, key).stream().findFirst();
     }
     public List<Job> recent(int limit) {
-        return db.query("SELECT * FROM research_jobs ORDER BY created_at DESC,id LIMIT ?", mapper, limit);
+        return db.query("SELECT id,question,mode,status,attempt,NULL AS result_json,error_message,created_at,updated_at FROM research_jobs ORDER BY created_at DESC,id LIMIT ?", mapper, limit);
     }
     @Transactional
     public Job insert(String id, String key, String question, String mode) {
