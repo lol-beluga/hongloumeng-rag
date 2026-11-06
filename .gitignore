@@ -11,6 +11,12 @@ __pycache__/
 *.pyc
 .venv/
 
+# Java build and task database
+java-service/target/
+java-service/data/
+*.mv.db
+*.trace.db
+
 # 编辑器 / 系统
 .idea/
 .vscode/

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>红楼梦 · 原文考证</title>
+<style>
+:root{color-scheme:light;--paper:#f7f3ea;--ink:#302d27;--muted:#786f63;--accent:#7d3430}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.8 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1060px;margin:55px auto;padding:0 24px}.eyebrow{letter-spacing:.28em;color:var(--accent);font-size:12px}h1{font:38px/1.4 Georgia,"SimSun",serif;margin:8px 0}h2{font-size:19px}p{color:var(--muted)}.layout{display:grid;grid-template-columns:340px 1fr;gap:32px;margin-top:32px}.card{border:1px solid #ded7ca;background:#fffcf6;border-radius:10px;padding:22px}textarea,select{font:inherit;width:100%;border:1px solid #cfc6b6;border-radius:6px;background:white;padding:10px;color:var(--ink)}textarea{min-height:140px;resize:vertical}label{display:block;font-size:14px;margin:12px 0 5px}button{font:inherit;cursor:pointer;border:0;border-radius:6px;background:var(--accent);color:white;padding:8px 18px;margin-top:14px}button:disabled{opacity:.5;cursor:wait}.secondary{background:#e9e2d5;color:var(--ink);margin-left:6px}.task{display:block;width:100%;background:transparent;color:var(--ink);text-align:left;border-bottom:1px solid #e6ded0;border-radius:0;padding:10px 0;margin:0}.task small{display:block;color:var(--muted)}#notice{color:var(--accent);min-height:26px;font-size:14px}.answer{white-space:pre-wrap;overflow-wrap:anywhere}.source{border-left:3px solid #c7b8a0;padding:8px 14px;margin:12px 0;font-size:14px}.source b{display:block;color:var(--accent)}small{color:var(--muted)}#detail{min-height:360px}a{color:var(--accent)}@media(max-width:760px){.layout{grid-template-columns:1fr}main{margin:30px auto}h1{font-size:30px}}
+</style>
+<main>
+<div class="eyebrow">一字一句 · 回到原文</div>
+<h1>红楼梦原文考证助手</h1>
+<p>记得情节，不一定记得原话。把问题留下，查一查它出自哪一回、前后还说了什么。</p>
+<div class="layout"><aside>
+<form id="form" class="card">
+<label for="question">想查什么？</label>
+<textarea id="question" maxlength="2000" required placeholder="宝玉挨打后，黛玉和宝钗分别怎样探望他？"></textarea>
+<label for="mode">查阅方式</label><select id="mode"><option value="lookup">查找原文 · 无需模型密钥</option><option value="research">多步考证 · 附原文依据</option></select>
+<button id="submit">开始查阅</button><div id="notice" role="status"></div>
+<small>任务提交后可以刷新页面，稍后在历史记录中查看结果。</small>
+</form>
+<h2>最近的查阅</h2><div id="history"></div>
+</aside><section id="detail" class="card"><h2>让判断有出处</h2><p>检索模式直接列出相关原文。考证模式会补充搜索、核对上下文，再给出带引用的报告。</p><p>当前收录一套120回文本，适合查阅人物、情节和原句；不同版本或脂批的问题，需要另找资料。</p></section></div>
+</main>
+<script>
+const $=id=>document.getElementById(id), labels={QUEUED:'等待查阅',RUNNING:'正在查证',COMPLETED:'已完成',PAUSED:'已保存进度',FAILED:'未能完成',INTERRUPTED:'已中断'};
+let selected=localStorage.getItem('honglou.selected'), busy=false;
+async function api(url,options={}){const r=await fetch(url,options);const data=await r.json();if(!r.ok)throw Error(data.detail||data.message||`请求未成功（${r.status}）`);return data;}
+function text(tag,value,parent){const e=document.createElement(tag);e.textContent=value;parent.append(e);return e;}
+async function refresh(){
+ if(busy)return;busy=true;
+ try{const jobs=await api('/api/jobs');$('history').replaceChildren();for(const j of jobs){const b=text('button',j.question,$('history'));b.className='task';text('small',labels[j.status]+' · '+new Date(j.createdAt).toLocaleString(),b);b.onclick=()=>{selected=j.id;localStorage.setItem('honglou.selected',selected);render(j);};}if(selected){const j=jobs.find(x=>x.id===selected)||await api('/api/jobs/'+selected);render(j);}}
+ catch(e){$('notice').textContent=e.message;}finally{busy=false;}
+}
+function render(j){const el=$('detail');el.replaceChildren();text('h2',j.question,el);text('small',`${labels[j.status]} · 第${j.attempt}次执行 · ${j.id}`,el);
+ if(j.error)text('p',j.error,el);
+ const r=j.result;if(r){if(r.stop_reason)text('p','停止原因：'+r.stop_reason,el);if(r.answer)text('div',r.answer,el).className='answer';for(const s of r.sources||[]){const d=text('div','',el);d.className='source';text('b',(s.source||'原文')+' · '+(s.evidence_id||''),d);text('span',s.content||'',d);}if(!r.answer&&!(r.sources||[]).length)text('p','本次没有取得可展示的原文或结论。',el);
+ const b=text('button','导出记录',el);b.className='secondary';b.onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(j,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download='research-'+j.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};}
+ if(['PAUSED','FAILED','INTERRUPTED'].includes(j.status)){const retry=text('button','从保存进度重试',el);retry.onclick=()=>resume(j.id,false);if(j.status==='PAUSED'){const more=text('button','增加一轮预算继续',el);more.className='secondary';more.onclick=()=>resume(j.id,true);}}
+}
+async function resume(id,extendBudget){try{await api('/api/jobs/'+id+'/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({extendBudget})});await refresh();}catch(e){$('notice').textContent=e.message;}}
+$('form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;$('notice').textContent='正在提交…';
+ const body=JSON.stringify({question:$('question').value.trim(),mode:$('mode').value});let pending;
+ try{pending=JSON.parse(localStorage.getItem('honglou.pending')||'null');}catch{pending=null;}
+ if(!pending||pending.body!==body){pending={body,key:crypto.randomUUID()};localStorage.setItem('honglou.pending',JSON.stringify(pending));}
+ try{const job=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':pending.key},body});selected=job.id;localStorage.setItem('honglou.selected',selected);localStorage.removeItem('honglou.pending');$('question').value='';$('notice').textContent='已提交，可稍后回来查看。';await refresh();}
+ catch(e){$('notice').textContent=e.message;}finally{$('submit').disabled=false;}
+};
+refresh();setInterval(refresh,2500);
+</script></html>

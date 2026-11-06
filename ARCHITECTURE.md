@@ -2,6 +2,18 @@
 
 系统共用一套原文索引，提供普通问答和原文考证两条执行流程。
 
+## Java 任务入口
+
+`java-service/` 提供 Spring Boot API 和任务网页。`JobController` 校验请求，`JobService` 管理容量和状态，`JobRepository` 使用 Spring JDBC / H2 保存任务。提交返回任务编号，由网页轮询结果。
+
+任务先提交数据库，再交给固定2个工作线程、8个等待位置的有界线程池。请求编号有数据库唯一约束；并发重复提交返回同一任务，复用编号但修改内容返回冲突。状态更新同时检查执行次数，防止旧执行结果覆盖重试后的新状态。
+
+`PythonWorker` 通过 `ProcessBuilder` 启动 `java_worker.py`，以 JSON 传递参数。`lookup` 模式只检索原文；`research` 模式使用 Java 任务编号作为 Python 检查点编号，已有检查点则恢复。进程默认最长执行240秒。
+
+H2 记录提交、状态和结果，SQLite 保留 Agent 中间过程，两者没有跨库事务。服务重启将未完成任务标为中断，等待显式重试。Java 历史列表只包含通过 Java 接口提交的任务；Python 侧仍可通过 CLI 查看相应的考证记录。
+
+这是单实例设计，尚未引入消息队列、跨实例调度或用户权限隔离。接口与启动方法见 [服务说明](java-service/README.md)，并发、事务和恢复边界见 [设计说明](java-service/DESIGN.md)。
+
 ## 检索层
 
 `rag_system.py`读取`docs/`中的文本，按句累积切分，每个片段不超过300字。索引使用jieba分词、停用词过滤、TF-IDF和余弦相似度，支持回数范围过滤。

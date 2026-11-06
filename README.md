@@ -1,22 +1,56 @@
 # 红楼梦原文考证助手
 
-基于《红楼梦》120回文本的检索问答应用，支持普通RAG问答和多步原文考证。检索层使用jieba分词、TF-IDF与余弦相似度，回答由DeepSeek生成，Streamlit提供交互界面。
+我很喜欢《红楼梦》，也想把阅读时冒出来的问题，变成能回到原文核对的东西：某句话是谁说的？发生在第几回？把前后几段一起读，意思会不会不一样？于是做了这个项目。
 
-考证模式通过LangGraph组织工具调用，支持问题拆解、补充检索、上下文阅读和引用校验。任务状态保存在SQLite中，可查看执行记录、恢复未完成任务并导出报告。
+查这些问题时，关键词搜索适合找原句，但只有一个大致印象时，往往不知道该搜什么；直接问大模型，又容易得到一段流畅的解释，却说不清出处。我希望这个工具能先找到书里的依据，再讨论怎么理解。它现在收录一套120回文本，可以查原文，也可以围绕一个问题做多步查证，把结论和引文一起留下来。
 
-执行流程和状态管理见[架构说明](ARCHITECTURE.md)。
+## 可以怎么用
 
-## 功能
+**找一段想不起出处的原文。** 输入“黛玉 葬花”之类的人物和情节词，直接查看相关片段、回目和原文编号。这种查找不调用模型，也不需要 API 密钥。
 
-- 普通问答：一次检索后生成回答，展示命中的原文片段。
-- 原文考证：按问题需要多次检索，支持限定回数和阅读相邻片段。
-- 证据引用：结论区分事实与解读，校验引用编号和原文摘录。
-- 任务管理：限制调用次数和执行时间，处理临时API错误，保存与恢复进度。
-- 报告导出：下载Markdown报告或包含执行记录的JSON文件。
+**比较同一情节里的不同人物。** 比如：
 
-## 安装
+> 依据第三十四回，比较宝钗和黛玉在宝玉挨打后的探望表现，分别给出原文依据，并区分事实与解读。
 
-开发环境为Python 3.14，依赖版本见[requirements.txt](requirements.txt)。
+这类问题通常需要分别找两个人的行动，再回看上下文。考证模式允许模型拆分问题、补充搜索和阅读相邻段落，最后提交带引用的结论。程序会检查引文是否确实来自本次查到的原文。
+
+**查到一半，稍后继续。** 多步查证需要等待，也可能遇到接口超时或调用额度用完。任务中心会保存状态，刷新页面后仍能查到结果；未完成的任务可以手动重试，达到预算限制时可以选择增加一轮预算。
+
+## 为什么这样做
+
+![任务中心的原文检索结果](assets/task-center.jpg)
+
+上图为“查找原文”模式的实际界面，展示的是候选片段，排序并不等同于相关性判断。
+
+最初的流程是一次检索、一次生成回答。它适合直接的问题，但人物比较、跨段落核对往往需要继续查资料，所以增加了用 LangGraph 组织的 Agent，让模型按证据决定下一步查什么。
+
+同时，执行过程需要有边界：什么时候停止、哪些工具能用、引用是否合法、失败后从哪里继续，都由 Python 执行层控制。这里把这部分称为 Harness，具体实现见 [架构说明](ARCHITECTURE.md)。
+
+Java 部分负责把查证变成可管理的后台任务。提交后立即返回任务编号，浏览器随后查询进度；数据库记录历史，有界线程池限制同时执行的任务，同一请求编号避免重复创建任务。这些功能对应长时间等待、重复点击和服务中断时会遇到的问题。
+
+```mermaid
+flowchart LR
+    U[浏览器任务中心] --> J[Spring Boot API]
+    J --> H[(H2 任务记录)]
+    J --> Q[有界任务队列]
+    Q --> P[Python 执行进程]
+    P --> R[原文检索 / LangGraph Agent]
+    R --> S[(SQLite 检查点)]
+    R --> T[120回原文]
+    R --> M[DeepSeek · 仅考证模式]
+```
+
+| 部分 | 当前实现 | 选择的原因 |
+| --- | --- | --- |
+| 原文检索 | jieba、TF-IDF、余弦相似度 | 语料范围固定，人物名、情节词和原句检索适合作为可检查的基线 |
+| 多步考证 | LangGraph、工具调用 | 搜索、读上下文、整理结论可以按问题多次进行 |
+| 执行控制 | 调用预算、引用校验、SQLite 检查点 | 避免无休止调用，保存已经找到的证据 |
+| 任务服务 | Java 21、Spring Boot、Spring JDBC、H2 | 提供接口、持久化历史、控制并发，启动时无需另装数据库服务 |
+| 页面 | Java 服务内置网页；另有 Streamlit 入口 | 任务中心适合异步查阅，Streamlit 适合普通问答和多轮追问 |
+
+## 开始使用
+
+Python 依赖按 [requirements.txt](requirements.txt) 安装，当前开发环境使用 Python 3.14。任务中心还需要 JDK 21；项目带有 Maven Wrapper，首次启动会下载 Maven 和 Java 依赖。
 
 ```bash
 git clone https://github.com/lol-beluga/hongloumeng-rag.git
@@ -24,96 +58,77 @@ cd hongloumeng-rag
 python -m venv .venv
 ```
 
-激活虚拟环境：
+Windows PowerShell：
 
 ```powershell
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:RESEARCH_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
+$env:RESEARCH_PROJECT_DIR = (Get-Location).Path
+# JAVA_HOME 应指向 JDK 21 的安装目录
+cd java-service
+.\mvnw.cmd spring-boot:run
 ```
+
+Linux / macOS：
 
 ```bash
-# Linux / macOS
-source .venv/bin/activate
+.venv/bin/python -m pip install -r requirements.txt
+export RESEARCH_PYTHON="$PWD/.venv/bin/python"
+export RESEARCH_PROJECT_DIR="$PWD"
+cd java-service
+sh mvnw spring-boot:run
 ```
 
-安装依赖：
+打开 [任务中心](http://127.0.0.1:8080)，先选“查找原文”即可体验。首次建立索引会比后续查询慢一些。
 
-```bash
-python -m pip install -r requirements.txt
-```
+要使用“多步考证”，把项目根目录的 `.env.example` 复制为 `.env`，填写 `DEEPSEEK_API_KEY`。模型默认是 `deepseek-chat`；需要修改时，在启动服务的终端设置环境变量 `DEEPSEEK_MODEL`。模型须支持工具调用。
 
-复制`.env.example`为`.env`，填写API密钥：
+任务服务默认同时执行2个任务、最多等待8个任务。配置、接口示例和故障处理见 [Java 服务说明](java-service/README.md)。
 
-```dotenv
-DEEPSEEK_API_KEY=your-api-key
-DEEPSEEK_MODEL=deepseek-chat
-```
+### 原有的 Streamlit 入口
 
-也可以通过环境变量配置，或在网页侧栏填写密钥与模型名称。考证模式需要模型支持工具调用。
-
-## 运行
+只使用 Python 也可以运行普通问答与多步考证。在项目根目录激活虚拟环境并运行：
 
 ```bash
 python -m streamlit run streamlit_app.py --server.address 127.0.0.1
 ```
 
-打开[http://localhost:8501](http://localhost:8501)。Windows也可运行`start_app.cmd`启动应用。
+打开 [问答页面](http://127.0.0.1:8501)。侧栏可以填写模型密钥、切换模式、恢复任务并导出 Markdown 报告。Windows 也可运行 `start_app.cmd`。
 
-在侧栏选择“普通问答”或“原文考证（Agent）”。例如：
-
-> 依据第三十四回，比较宝钗和黛玉在宝玉挨打后的探望表现，分别给出原文依据，并区分事实与解读。
-
-考证模式会结合最近几轮对话处理追问。达到调用或时间限制时，任务保存为暂停状态，可从侧栏的任务列表恢复；需要继续查证时，可选择增加一轮预算。完成后可查看原文、执行记录并下载报告。
-
-## 命令行
+### 命令行
 
 ```bash
-# 新建考证任务
 python agent_cli.py ask "第三十四回中宝钗如何给宝玉送药？"
-
-# 查看最近任务
 python agent_cli.py list
-
-# 恢复任务，TASK_ID为任务编号
 python agent_cli.py resume TASK_ID
 python agent_cli.py resume TASK_ID --extend-budget
-
-# 导出任务记录
 python agent_cli.py show TASK_ID --out outputs/task.json
 ```
 
-## 测试与评测
+## 验证效果
 
 ```bash
-# 离线测试
+# 项目根目录，已激活 Python 虚拟环境
 python -m unittest discover -s tests -v
-
-# 校验开发用例与参考原文，不请求API
 python evaluate.py --dry-run
 
-# 对比普通RAG和考证模式，会请求API
+# 对比普通 RAG 与考证模式，会调用模型 API
 python evaluate.py --mode both --limit 1
+
+# Java 服务目录；Windows 使用 .\mvnw.cmd test
+sh mvnw test
 ```
 
-评测结果保存在`outputs/eval-时间戳/`，包含配置、逐题预测、原文召回统计、Token用量和人工复核表`review.csv`。附带的6条用例用于开发验证；答案正确性与证据支持程度需要人工复核，不以引用文字校验率代替答案准确率。
+Python 测试覆盖工具与引用校验、预算、检查点恢复和界面。Java 测试覆盖并发重复提交、队列满、失败重试、中断状态和 HTTP 接口。测试中的模型响应使用替身，不产生 API 费用。
 
-## 项目结构
+评测输出保存在 `outputs/eval-时间戳/`，包含逐题预测、原文召回统计、Token 用量和人工复核表 `review.csv`。附带的6条用例是开发用例，不能据此推断广泛问题上的准确率。引文能在原文里找到，也不等于它充分支持结论，仍需要人工核对。
 
-```text
-├── docs/                 # 按回存放的原著文本
-├── rag_system.py         # 文档切分、索引与原文检索
-├── agent_harness.py      # Agent执行流程、调用限制与恢复
-├── research_tools.py     # 工具定义、参数及引用校验
-├── run_store.py          # SQLite任务状态与执行锁
-├── app_ui.py             # Streamlit界面
-├── streamlit_app.py      # 网页启动入口
-├── agent_cli.py          # 命令行入口
-├── evaluate.py           # 对照评测
-├── eval/                 # 开发用例与参考原文
-├── tests/                # 功能与界面测试
-└── ARCHITECTURE.md       # 执行流程与设计说明
-```
+## 目前的范围
 
-语料约86.9万字，切分为3110个不超过300字的片段，TF-IDF特征上限为5000。缓存随语料和索引版本变化建立新版本；任务记录、索引缓存和评测结果均不纳入版本控制。
+- 语料为一套120回文本，约86.9万字、3110个不超过300字的片段；没有收录版本校勘、脂批或研究论文。
+- 检索目前依赖词面匹配。别名、隐晦指代和同义改写可能漏召回；尚未接入语义向量检索或重排模型。
+- 任务中心面向单人、单实例使用，默认只监听 `127.0.0.1`，没有账号与任务权限隔离。
+- 服务重启会把未完成任务标记为中断，由使用者决定是否重试。检查点能保留进度，但模型响应返回与本地保存之间仍有中断窗口，不能保证恢复时绝不重复计费。
+- Java 保存任务状态和结果，Python 保存考证过程；两者共用任务编号。Streamlit / CLI 创建的任务不自动出现在 Java 的历史列表中。
 
-引用校验检查摘录文字是否来自对应片段，不能自动证明结论被原文充分支持。当前语料为单一120回文本，不包含不同版本、脂批或研究论文。
+更多实现细节见 [架构说明](ARCHITECTURE.md) 和 [Java 任务服务设计](java-service/DESIGN.md)。

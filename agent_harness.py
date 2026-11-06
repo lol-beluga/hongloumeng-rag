@@ -63,13 +63,15 @@ class ResearchAgent:
         self.store = store or RunStore(PROJECT_DIR / "runs" / "research.sqlite3")
         self.config = config or AgentConfig()
 
-    def start(self, question, history=None, on_event=None):
+    def start(self, question, history=None, on_event=None, run_id=None):
         question = question.strip()
         if not 1 <= len(question) <= 2000:
             raise ValueError("问题须为1至2000字。")
         history = [{"role": h["role"], "content": str(h["content"])[:1200]}
                    for h in (history or [])[-6:] if h.get("role") in ("user", "assistant")]
-        state = {"run_id": uuid.uuid4().hex, "question": question, "history": history,
+        if run_id is not None and (type(run_id) is not str or uuid.UUID(run_id).hex != run_id):
+            raise ValueError("任务编号必须为32位UUID十六进制字符串。")
+        state = {"run_id": run_id or uuid.uuid4().hex, "question": question, "history": history,
                  "corpus_id": self.rag.corpus_id, "model": self.rag.model,
                  "config": asdict(self.config), "limits": asdict(self.config),
                  "status": "running", "stop_reason": "", "plan": [], "evidence": {},
